@@ -1,22 +1,23 @@
 import akioi_2048 as ak
 import numpy as np
 import torch
+import config
 
 device = torch.device("cuda:0")
 class Env2048:
     def __init__(self):
-        self.boards = np.empty((128, 4, 4), dtype=int)
+        self.boards = np.empty((config.batch, 4, 4), dtype=int)
 
     def reset(self):
-        self.boards = np.empty((128, 4, 4), dtype=int)
-        for k in range(128):
+        self.boards = np.empty((config.batch, 4, 4), dtype=int)
+        for k in range(config.batch):
             board = ak.init()
             for i in range(4):
                 for j in range(4):
                     if board[i][j] < 0:
                         board[i][j] = 0
             self.boards[k] = board
-        return torch.as_tensor(self.boards,device=device).view(128, 16)
+        return torch.as_tensor(self.boards,device=device).view(config.batch, 16)
     
     def step(self, actions):
         dones = []
@@ -31,4 +32,4 @@ class Env2048:
                     if new_board[i][j] < 0:
                         new_board[i][j] = 0
             self.boards[k] = np.array(new_board)
-        return torch.as_tensor(self.boards, device=device).view(128, 16), _, torch.as_tensor(dones)
+        return torch.as_tensor(self.boards, device=device).view(config.batch, 16), _, torch.as_tensor(dones)

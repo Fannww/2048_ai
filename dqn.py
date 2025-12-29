@@ -4,6 +4,7 @@ import torch.optim as optim
 from collections import deque
 import random
 import numpy as np
+import config
 
 device = torch.device("cuda:0")
 class NN(nn.Module):
@@ -38,11 +39,11 @@ class ReplayBuffer():
 
 def SelectAction(state, epsilon, model, return_tier_list=False):
     if random.random() < epsilon:
-        return torch.randint(0, 4, (128, 1), device=device)
+        return torch.randint(0, 4, (config.batch, 1), device=device)
     with torch.no_grad():
         q_values = model(state.float())
         sorted_actions = torch.argsort(q_values, descending=True)
-    return sorted_actions[:, 0].view(128, 1) if not return_tier_list else sorted_actions
+    return sorted_actions[:, 0].view(config.batch, 1) if not return_tier_list else sorted_actions
 
 def trainstep(buffer, model, optimizer, batch_size, gamma):
     sample = buffer.sample(batch_size)
@@ -56,7 +57,7 @@ def trainstep(buffer, model, optimizer, batch_size, gamma):
 
     next_q = model(next_states.float())
     max_next_q = next_q.max(1)[0]
-    target = (rewards + gamma * max_next_q * (1 - dones.int())).view(128, 1)
+    target = (rewards + gamma * max_next_q * (1 - dones.int())).view(config.batch, 1)
     loss = nn.MSELoss()(q_taken, target.detach())
     optimizer.zero_grad()
     loss.backward()
@@ -68,9 +69,9 @@ for i in range(1, 13):
     log_values[2**i] = i
 directions = np.array([[0, 1], [1, 0]])
 def issafe(row, col, grid):
-    mask = torch.full((128, 1), 1, device=device)
+    mask = torch.full((config.batch, 1), 1, device=device)
     for d1, d2 in directions:
-        mask *= (grid[:, row, col] == grid[:, row + d1, col + d2]).view(128, 1)
+        mask *= (grid[:, row, col] == grid[:, row + d1, col + d2]).view(config.batch, 1)
 
     return mask
 def weighted_sum_og(grid):
@@ -78,34 +79,34 @@ def weighted_sum_og(grid):
                        [256 ,512 ,1024 , 2048],
                        [128, 64, 32, 16],
                        [1, 2, 4, 8]])
-    score = torch.zeros((128, 1), dtype=int, device=device)
+    score = torch.zeros((config.batch, 1), dtype=int, device=device)
     for i in range(4):
         for j in range(4):
-            score += (weights[i, j] * grid[:, i, j]).view(128, 1)
+            score += (weights[i, j] * grid[:, i, j]).view(config.batch, 1)
     return score
 def evaluate(grids):
-    grids = grids.view(128, 4, 4)
+    grids = grids.view(config.batch, 4, 4)
     weighted_sum = (weighted_sum_og(grids))
-    smoothness = torch.full((128,1), 0.0, device=device)
+    smoothness = torch.full((config.batch,1), 0.0, device=device)
     for i in range(3):
         for j in range(3):
             mask = ((grids[:, i, j] != 0) * (grids[:, i + 1, j] != 0))
-            smoothness -= (abs((log_values[grids[:, i, j]] - log_values[grids[:, i + 1, j]]) * mask)).view(128, 1)
+            smoothness -= (abs((log_values[grids[:, i, j]] - log_values[grids[:, i + 1, j]]) * mask)).view(config.batch, 1)
             mask = ((grids[:, i, j] != 0) * (grids[:, i, j + 1] != 0))
-            smoothness -= (abs((log_values[grids[:, i, j]] - log_values[grids[:, i, j + 1]]) * mask)).view(128, 1)
+            smoothness -= (abs((log_values[grids[:, i, j]] - log_values[grids[:, i, j + 1]]) * mask)).view(config.batch, 1)
 
-    max_tile = torch.full((128, 1), -1.0, device=device)
-    empty_tiles = torch.full((128, 1), 0.0, device=device)
+    max_tile = torch.full((config.batch, 1), -1.0, device=device)
+    empty_tiles = torch.full((config.batch, 1), 0.0, device=device)
     for row in range(4):
         for col in range(4):
-            vals = grids[:, row, col].view(128, 1)
+            vals = grids[:, row, col].view(config.batch, 1)
             mask = vals == 0
             empty_tiles += 1 * mask
             mask = vals > max_tile
             max_tile *= ~mask
             max_tile += mask * vals
-    empty_weight = torch.full((128, 1), 0.0, device=device)
-    smoothness_weight = torch.full((128 ,1), 0.0, device=device) 
+    empty_weight = torch.full((config.batch, 1), 0.0, device=device)
+    smoothness_weight = torch.full((config.batch ,1), 0.0, device=device) 
     mask = max_tile < 1024
     empty_weight += 4 * mask
     smoothness_weight += 0.2 * mask
@@ -115,7 +116,7 @@ def evaluate(grids):
     mask = max_tile >= 2048
     empty_weight += 1.5 * mask
     smoothness_weight += 3 * mask
-    safe = torch.full((128, 1), 0, device=device)
+    safe = torch.full((config.batch, 1), 0, device=device)
     mask = empty_tiles == 0
     safe += mask
     for i in range(3):
@@ -123,4 +124,4 @@ def evaluate(grids):
             mask = issafe(i, j, grids)
             safe = (safe == 1) & (mask == 0)
     score = (((empty_tiles * max_tile * empty_weight) + (smoothness * (max_tile * smoothness_weight)) + (max_tile) + (weighted_sum)) * (~safe).int()).int()
-    return score.view(128,)
+    return score.view(config.batch,)

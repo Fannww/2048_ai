@@ -1,45 +1,29 @@
-from env import Env2048
-from dqn import NN, ReplayBuffer, SelectAction, trainstep, evaluate
+from dqn import SelectAction, trainstep, evaluate
 import torch
-import torch.optim as optim
+import config
 
 
-episodes = 10
-batch = 128
-gamma = 0.99
-epsilon = 1.0
-min_epsilon = 0.05
-decay = 0.7
-
-device = torch.device("cuda:0")
-env = Env2048()
-model = NN().to(device)
-model.load_state_dict(torch.load("model.pt"))
-model.to(device)
-model.train()
-optimizer = optim.Adam(model.parameters(), lr=1e-3)
-buffer = ReplayBuffer(100000)
-for ep in range(episodes):
+for ep in range(config.episodes):
     print (ep)
-    states = env.reset()
-    done = torch.full((128, 1), 0, dtype=torch.bool, device=device)
+    states = config.env.reset()
+    done = torch.full((config.batch, 1), 0, dtype=torch.bool, device=config.device)
     max_tile = 0
     while not done.all():
 
-        action = SelectAction(states, epsilon, model)
-        next_state, _, done = env.step(action)
+        action = SelectAction(states, epsilon, config.model)
+        next_state, _, done = config.env.step(action)
         reward = evaluate(next_state)
 
-        buffer.push(states, action, reward, next_state.float(), done.to(device=device))
+        config.buffer.push(states, action, reward, next_state.float(), done.to(device=config.device))
         
-        states = next_state.float().view(128, 16)
+        states = next_state.float().view(config.batch, 16)
 
-        if len(buffer) > batch:
+        if len(config.buffer) > config.batch:
             for _ in range(8):
-                trainstep(buffer, model, optimizer, batch, gamma)
+                trainstep(config.buffer, config.model, config.optimizer, config.batch, config.gamma)
     max_tile = max((states.max().item()), max_tile)
     print(max_tile)
-    epsilon = max(min_epsilon, epsilon * decay)
+    epsilon = max(config.min_epsilon, epsilon * config.decay)
 
 print('done training')
-torch.save(model.state_dict(), "model.pt")
+torch.save(config.model.state_dict(), "model.pt")
