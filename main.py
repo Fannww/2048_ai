@@ -12,7 +12,6 @@ import torch
 model = NN()
 model.load_state_dict(torch.load("model.pt"))
 model.eval()
-
 board = ak.init()
 
 #le screen

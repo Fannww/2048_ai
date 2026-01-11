@@ -4,7 +4,9 @@ import torch.optim as optim
 from collections import deque
 import random
 import numpy as np
-import config
+import params
+from sum_tree import sum_tree
+
 
 device = torch.device("cuda:0")
 class NN(nn.Module):
@@ -24,41 +26,107 @@ class NN(nn.Module):
         return x
 class ReplayBuffer():
     def __init__(self, capacity):
-        self.buffer = deque(maxlen=capacity)
-    
-    def push(self, states, actions, rewards, next_states, dones):
-        for state, action, reward, next_state, done in zip(states, actions, rewards, next_states, dones):
-            self.buffer.append((state, action, reward, next_state, done))
-    
-    def sample(self, batch_size):
-        sample = random.sample(self.buffer, batch_size)
-        return sample
-    
-    def __len__(self):
-        return len(self.buffer)
+        self.state = torch.empty((capacity, 16), dtype=torch.int, device=device)
+        self.action = torch.empty((capacity), dtype=torch.int,  device=device)
+        self.reward = torch.empty(capacity, dtype=torch.int,  device=device)
+        self.next_state = torch.empty((capacity, 16), dtype=torch.int,  device=device)
+        self.done = torch.empty(capacity, dtype=torch.bool,  device=device)
+        self.pbuffer = sum_tree(capacity)
+        self.maxsize = capacity
+        self.psum = 0
+        self.maxp = 1
+        self.len = 0
+    def push(self, states, actions, rewards, next_states, dones, priority):
+        idx = self.pbuffer.add(priority)
+        self.state[idx] = states
+        self.action[idx] = actions
+        self.reward[idx] = rewards
+        self.next_state[idx] = next_states
+        self.done[idx] = dones
+        if (priority > self.maxp).any():
+            self.maxp = priority
+        self.psum = self.pbuffer.get_sum()
+        idk = self.psum
+        self.len += 128
 
-def SelectAction(state, epsilon, model, return_tier_list=False):
+    def sample(self, batch_size):
+        psamples = torch.rand(batch_size, device=device) * self.psum + 1e-5
+        idxs = self.pbuffer.sample(psamples)
+        states = self.state[idxs]
+        actions = self.action[idxs]
+        rewards = self.reward[idxs]
+        next_states = self.next_state[idxs]
+        dones = self.done[idxs]
+        return (states, actions, rewards, next_states, dones), idxs
+    def change_priorities(self, idxs, values):
+        self.pbuffer.update(idxs, values)
+        if values.max() > self.maxp:
+            self.maxp = values.max()
+        self.psum = self.pbuffer.get_sum()
+        idk = self.psum
+        pass
+    def __len__(self):
+        return self.len
+    def maxpr(self):
+        return self.maxp
+    
+vmask = torch.zeros(128, 4, dtype=torch.bool, device=device)
+cmask = torch.zeros(128, 4, dtype=torch.bool, device=device)
+rank = torch.arange(4, device=device).expand(128, 4)
+masked_rank = torch.empty(128, 4, device=device)
+def return_valid_move(states, actions, vmask=vmask):
+    vmask.zero_()
+    for i in range(4):
+        for j in range(4):
+            if i != 0:#is up valid?
+                cmask[:, 0] = ((states[:, i, j] == states[:,i - 1, j]) | (states[:,i - 1, j] == 0)) * ~(states[:, i, j] == 0)
+                vmask[:, 0] |= cmask[:, 0]
+            if j != 0:#is left valid?
+                cmask[:, 2] = ((states[:, i, j] == states[:,i, j - 1]) | (states[:,i, j - 1] == 0)) * ~(states[:, i, j] == 0)
+                vmask[:, 2] |= cmask[:, 2]
+            if i != 3:#is down valid?
+                cmask[:, 1] = ((states[:, i, j] == states[:,i + 1, j]) | (states[:,i + 1, j] == 0)) * ~(states[:, i, j] == 0)
+                vmask[:, 1] |= cmask[:, 1]
+            if j != 3:#is right valid?
+                cmask[:, 3] = ((states[:, i, j] == states[:,i, j + 1]) | (states[:,i, j + 1] == 0)) * ~(states[:, i, j] == 0)
+                vmask[:, 3] |= cmask[:, 3]
+    masked_rank.copy_(rank)
+    masked_rank[~vmask] = 999
+    idx = masked_rank.argmin(dim=1)
+    vactions = actions[torch.arange(128), idx]
+    return vactions.int()
+def SelectAction(state, epsilon, model):
+    israndom = False
     if random.random() < epsilon:
-        return torch.randint(0, 4, (config.batch, 1), device=device)
-    with torch.no_grad():
-        q_values = model(state.float())
-        sorted_actions = torch.argsort(q_values, descending=True)
-    return sorted_actions[:, 0].view(config.batch, 1) if not return_tier_list else sorted_actions
+        israndom = True
+        randoma = torch.stack([torch.randperm(4, device=device) for _ in range(params.batch)])
+        randoma = return_valid_move(state.view(128, 4, 4), randoma)
+    if not israndom:    
+        with torch.no_grad():
+            q_values = model(state.float())
+            sorted_actions = torch.argsort(q_values, descending=True)
+            actions = return_valid_move(state.view(128, 4, 4), sorted_actions)
+    return actions if not israndom else randoma
 
 def trainstep(buffer, model, optimizer, batch_size, gamma):
-    sample = buffer.sample(batch_size)
-    states = torch.stack([t[0] for t in sample])
-    actions = torch.stack([t[1] for t in sample])
-    rewards = torch.stack([t[2] for t in sample])
-    next_states = torch.stack([t[3] for t in sample])
-    dones = torch.stack([t[4] for t in sample])
+    sample, idxs = buffer.sample(batch_size)
+    states = sample[0]
+    actions = sample[1]
+    rewards = sample[2]
+    next_states = sample[3]
+    dones = sample[4]
     q_values = model(states.float())
-    q_taken = q_values.gather(1, actions)
+    q_taken = q_values.gather(1, actions.long().view(params.batch, 1))
 
     next_q = model(next_states.float())
     max_next_q = next_q.max(1)[0]
-    target = (rewards + gamma * max_next_q * (1 - dones.int())).view(config.batch, 1)
-    loss = nn.MSELoss()(q_taken, target.detach())
+    target = (rewards + gamma * max_next_q * (1 - dones.int())).view(params.batch, 1)
+    loss = nn.MSELoss(reduction='none')(q_taken, target.detach())
+    priorities = loss / (loss.max() + 1e-5)
+    unique, u_idx = torch.unique(idxs, return_inverse=True)
+    u_idxs = torch.zeros_like(unique).scatter_(0, u_idx, torch.arange(len(idxs), device=device))
+    buffer.change_priorities(idxs[u_idxs], priorities.view(params.batch,)[u_idxs])
+    loss = loss.mean()
     optimizer.zero_grad()
     loss.backward()
     optimizer.step()
@@ -69,9 +137,9 @@ for i in range(1, 13):
     log_values[2**i] = i
 directions = np.array([[0, 1], [1, 0]])
 def issafe(row, col, grid):
-    mask = torch.full((config.batch, 1), 1, device=device)
+    mask = torch.full((params.batch, 1), 1, device=device)
     for d1, d2 in directions:
-        mask *= (grid[:, row, col] == grid[:, row + d1, col + d2]).view(config.batch, 1)
+        mask *= (grid[:, row, col] == grid[:, row + d1, col + d2]).view(params.batch, 1)
 
     return mask
 def weighted_sum_og(grid):
@@ -79,34 +147,34 @@ def weighted_sum_og(grid):
                        [256 ,512 ,1024 , 2048],
                        [128, 64, 32, 16],
                        [1, 2, 4, 8]])
-    score = torch.zeros((config.batch, 1), dtype=int, device=device)
+    score = torch.zeros((params.batch, 1), dtype=int, device=device)
     for i in range(4):
         for j in range(4):
-            score += (weights[i, j] * grid[:, i, j]).view(config.batch, 1)
+            score += (weights[i, j] * grid[:, i, j]).view(params.batch, 1)
     return score
 def evaluate(grids):
-    grids = grids.view(config.batch, 4, 4)
+    grids = grids.view(params.batch, 4, 4)
     weighted_sum = (weighted_sum_og(grids))
-    smoothness = torch.full((config.batch,1), 0.0, device=device)
+    smoothness = torch.full((params.batch,1), 0.0, device=device)
     for i in range(3):
         for j in range(3):
             mask = ((grids[:, i, j] != 0) * (grids[:, i + 1, j] != 0))
-            smoothness -= (abs((log_values[grids[:, i, j]] - log_values[grids[:, i + 1, j]]) * mask)).view(config.batch, 1)
+            smoothness -= (abs((log_values[grids[:, i, j]] - log_values[grids[:, i + 1, j]]) * mask)).view(params.batch, 1)
             mask = ((grids[:, i, j] != 0) * (grids[:, i, j + 1] != 0))
-            smoothness -= (abs((log_values[grids[:, i, j]] - log_values[grids[:, i, j + 1]]) * mask)).view(config.batch, 1)
+            smoothness -= (abs((log_values[grids[:, i, j]] - log_values[grids[:, i, j + 1]]) * mask)).view(params.batch, 1)
 
-    max_tile = torch.full((config.batch, 1), -1.0, device=device)
-    empty_tiles = torch.full((config.batch, 1), 0.0, device=device)
+    max_tile = torch.full((params.batch, 1), -1.0, device=device)
+    empty_tiles = torch.full((params.batch, 1), 0.0, device=device)
     for row in range(4):
         for col in range(4):
-            vals = grids[:, row, col].view(config.batch, 1)
+            vals = grids[:, row, col].view(params.batch, 1)
             mask = vals == 0
             empty_tiles += 1 * mask
             mask = vals > max_tile
             max_tile *= ~mask
             max_tile += mask * vals
-    empty_weight = torch.full((config.batch, 1), 0.0, device=device)
-    smoothness_weight = torch.full((config.batch ,1), 0.0, device=device) 
+    empty_weight = torch.full((params.batch, 1), 0.0, device=device)
+    smoothness_weight = torch.full((params.batch ,1), 0.0, device=device) 
     mask = max_tile < 1024
     empty_weight += 4 * mask
     smoothness_weight += 0.2 * mask
@@ -116,7 +184,7 @@ def evaluate(grids):
     mask = max_tile >= 2048
     empty_weight += 1.5 * mask
     smoothness_weight += 3 * mask
-    safe = torch.full((config.batch, 1), 0, device=device)
+    safe = torch.full((params.batch, 1), 0, device=device)
     mask = empty_tiles == 0
     safe += mask
     for i in range(3):
@@ -124,4 +192,4 @@ def evaluate(grids):
             mask = issafe(i, j, grids)
             safe = (safe == 1) & (mask == 0)
     score = (((empty_tiles * max_tile * empty_weight) + (smoothness * (max_tile * smoothness_weight)) + (max_tile) + (weighted_sum)) * (~safe).int()).int()
-    return score.view(config.batch,)
+    return score.view(params.batch,)
