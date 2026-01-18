@@ -3,6 +3,7 @@ import torch
 import params
 import setup
 
+steps = 0
 for ep in range(params.episodes):
     print (ep)
     states = setup.env.reset()
@@ -10,7 +11,7 @@ for ep in range(params.episodes):
     max_tile = 0
     while not done.all():
 
-        action = SelectAction(states, params.epsilon, setup.model)
+        action = SelectAction(states, params.epsilon, setup.online_q)
         next_state, _, done = setup.env.step(action)
         reward = evaluate(next_state)
         maxp = setup.buffer.maxpr()
@@ -18,7 +19,10 @@ for ep in range(params.episodes):
         states = next_state.view(params.batch, 16)
         if len(setup.buffer) > params.batch:
             for _ in range(8):
-                trainstep(setup.buffer, setup.model, setup.optimizer, params.batch, params.gamma)
+                trainstep(setup.buffer, setup.online_q, setup.target_q, setup.optimizer, params.batch, params.gamma)
+                steps += 1
+                if steps % params.target_upddate == 0:
+                    setup.target_q.load_state_dict(setup.online_q.state_dict())
     
     max_tile = max((states.max().item()), max_tile)
     print(max_tile)

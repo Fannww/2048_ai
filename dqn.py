@@ -32,7 +32,6 @@ class ReplayBuffer():
         self.next_state = torch.empty((capacity, 16), dtype=torch.int,  device=device)
         self.done = torch.empty(capacity, dtype=torch.bool,  device=device)
         self.pbuffer = sum_tree(capacity)
-        self.maxsize = capacity
         self.psum = 0
         self.maxp = 1
         self.len = 0
@@ -43,15 +42,15 @@ class ReplayBuffer():
         self.reward[idx] = rewards
         self.next_state[idx] = next_states
         self.done[idx] = dones
-        if (priority > self.maxp).any():
-            self.maxp = priority
+        if priority.max() > self.maxp:
+            self.maxp = priority.max().item()
         self.psum = self.pbuffer.get_sum()
-        idk = self.psum
         self.len += 128
 
     def sample(self, batch_size):
-        psamples = torch.rand(batch_size, device=device) * self.psum + 1e-5
-        idxs = self.pbuffer.sample(psamples)
+        psamples = torch.rand(batch_size, device=device) * self.psum
+        psamples.clamp_(1e-4)
+        idxs = self.pbuffer.sample(psamples, self.len)
         states = self.state[idxs]
         actions = self.action[idxs]
         rewards = self.reward[idxs]
@@ -61,10 +60,9 @@ class ReplayBuffer():
     def change_priorities(self, idxs, values):
         self.pbuffer.update(idxs, values)
         if values.max() > self.maxp:
-            self.maxp = values.max()
+            self.maxp = values.max().item()
         self.psum = self.pbuffer.get_sum()
-        idk = self.psum
-        pass
+        
     def __len__(self):
         return self.len
     def maxpr(self):
@@ -108,21 +106,22 @@ def SelectAction(state, epsilon, model):
             actions = return_valid_move(state.view(128, 4, 4), sorted_actions)
     return actions if not israndom else randoma
 
-def trainstep(buffer, model, optimizer, batch_size, gamma):
+
+def trainstep(buffer, online_q, target_q, optimizer, batch_size, gamma):
     sample, idxs = buffer.sample(batch_size)
     states = sample[0]
     actions = sample[1]
     rewards = sample[2]
     next_states = sample[3]
     dones = sample[4]
-    q_values = model(states.float())
+    q_values = online_q(states.float())
     q_taken = q_values.gather(1, actions.long().view(params.batch, 1))
 
-    next_q = model(next_states.float())
+    next_q = target_q(next_states.float())
     max_next_q = next_q.max(1)[0]
     target = (rewards + gamma * max_next_q * (1 - dones.int())).view(params.batch, 1)
     loss = nn.MSELoss(reduction='none')(q_taken, target.detach())
-    priorities = loss / (loss.max() + 1e-5)
+    priorities = (loss / loss.max()) + 1e-5
     unique, u_idx = torch.unique(idxs, return_inverse=True)
     u_idxs = torch.zeros_like(unique).scatter_(0, u_idx, torch.arange(len(idxs), device=device))
     buffer.change_priorities(idxs[u_idxs], priorities.view(params.batch,)[u_idxs])

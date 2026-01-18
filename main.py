@@ -114,8 +114,7 @@ while running:
     #ai makes move
     if time.time() - last_time_ai >= delay:
         i = 0
-        action = SelectAction(torch.tensor(board, dtype=torch.float32).flatten().unsqueeze(0), 0, model, True)
-        action = [int(a) for sub in action for a in sub]
+        action = SelectAction(torch.tensor(board, dtype=torch.float32).flatten().unsqueeze(0), 0, model)
         while not moved_ai and i < 4:
             if action[i] == 0:
                 b_after, t_score, _ = ak.step(board, ak.Direction.Up)

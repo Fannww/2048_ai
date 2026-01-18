@@ -8,13 +8,12 @@ class sum_tree:
         self.tree = torch.zeros(2 * capacity - 1, device=device)
         self.write = 0
         self.capacity = capacity
-        self.full = False
 
     def add(self, value):
         
         write = (torch.arange(self.write, self.write + params.batch, device=device) % self.capacity)
         self.update(write, value)
-        self.write += params.batch
+        self.write = (self.write + params.batch) % self.capacity
         return write
     
     def update(self, idx, value):
@@ -32,7 +31,7 @@ class sum_tree:
     def get_sum(self):
         return self.tree[0]
     
-    def sample(self, samples):
+    def sample(self, samples, lens):
         idxs = torch.zeros(len(samples), dtype=int, device=device)
         i = 0
         for sample in samples:
@@ -45,5 +44,7 @@ class sum_tree:
                     idx = idx * 2 + 2
                     sample = sample - left
             idxs[i] = int(idx - (self.capacity - 1))
+            if idxs[i] > lens:
+                continue
             i += 1
         return idxs
