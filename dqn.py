@@ -6,7 +6,7 @@ import random
 import numpy as np
 import params
 from sum_tree import sum_tree
-
+from torchrl.modules import NoisyLinear
 
 device = torch.device("cuda:0")
 class NN(nn.Module):
@@ -15,7 +15,7 @@ class NN(nn.Module):
         self.fc1 = nn.Linear(16, 512)
         self.fc2 = nn.Linear(512, 256)
         self.fc3 = nn.Linear(256, 128)
-        self.fc4 = nn.Linear(128, 4)
+        self.fc4 = NoisyLinear(128, 4)
         self.nonlinear = nn.ReLU()
     def forward(self, x):
         x = x.view(x.size(0), - 1)
