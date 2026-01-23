@@ -15,15 +15,18 @@ class NN(nn.Module):
         self.fc1 = nn.Linear(16, 512)
         self.fc2 = nn.Linear(512, 256)
         self.fc3 = nn.Linear(256, 128)
-        self.fc4 = NoisyLinear(128, 4 * params.num_atoms)
+        self.advantage = NoisyLinear(128, 4 * params.num_atoms)
+        self.value = NoisyLinear(128, 1 * params.num_atoms)
         self.nonlinear = nn.ReLU()
     def forward(self, x):
         x = x.view(x.size(0), - 1)
         x = self.nonlinear(self.fc1(x))
         x = self.nonlinear(self.fc2(x))
         x = self.nonlinear(self.fc3(x))
-        x = self.fc4(x)
-        return x.view(-1, 4, params.num_atoms)
+        A = self.advantage(x)
+        V = self.value(x)
+        Q = V.view(params.batch, 1, params.num_atoms) + (A - A.mean(dim=1, keepdim=True)).view(params.batch, 4, params.num_atoms)
+        return Q
 class ReplayBuffer():
     def __init__(self, capacity):
         self.state = torch.empty((capacity, 16), dtype=torch.int, device=device)
