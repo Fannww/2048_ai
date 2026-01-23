@@ -5,3 +5,6 @@ epsilon = 1
 min_epsilon = 0.05
 decay = 0.7
 target_upddate = 2000
+v_min = 0
+v_max = 50
+num_atoms = 51
