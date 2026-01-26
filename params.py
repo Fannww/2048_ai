@@ -1,5 +1,5 @@
 episodes = 10
-batch = 128
+batch = 10
 gamma = 0.99
 epsilon = 1
 min_epsilon = 0.05

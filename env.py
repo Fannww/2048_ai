@@ -5,19 +5,20 @@ import params
 
 device = torch.device("cuda:0")
 class Env2048:
-    def __init__(self):
-        self.boards = np.empty((params.batch, 4, 4), dtype=int)
+    def __init__(self, batch=params.batch):
+        self.batch = batch
+        self.boards = np.empty((self.batch, 4, 4), dtype=int)
 
     def reset(self):
-        self.boards = np.empty((params.batch, 4, 4), dtype=int)
-        for k in range(params.batch):
+        self.boards = np.empty((self.batch, 4, 4), dtype=int)
+        for k in range(self.batch):
             board = ak.init()
             for i in range(4):
                 for j in range(4):
                     if board[i][j] < 0:
                         board[i][j] = 0
             self.boards[k] = board
-        return torch.as_tensor(self.boards,device=device, dtype=torch.int).view(params.batch, 16)
+        return torch.as_tensor(self.boards,device=device, dtype=torch.int).view(self.batch, 16)
     
     def step(self, actions):
         dones = []
@@ -31,4 +32,4 @@ class Env2048:
                     if new_board[i][j] < 0:
                         new_board[i][j] = 0
             self.boards[k] = np.array(new_board)
-        return torch.as_tensor(self.boards, device=device, dtype=torch.int).view(params.batch, 16), _, torch.as_tensor(dones)
+        return torch.as_tensor(self.boards, device=device, dtype=torch.int).view(self.batch, 16), _, torch.as_tensor(dones)

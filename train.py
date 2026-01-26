@@ -2,6 +2,15 @@ from dqn import SelectAction, trainstep, evaluate
 import torch
 import params
 import setup
+import matplotlib.pyplot as plt
+from evaluate import evaluate_model
+plt.ion()
+max_score = []
+fig, ax = plt.subplots()
+line, = ax.plot([], [])
+ax.set_xlabel("Episodes")
+ax.set_ylabel("Max_score")
+plt.show()
 
 steps = 0
 for ep in range(params.episodes):
@@ -24,8 +33,16 @@ for ep in range(params.episodes):
                 if steps % params.target_upddate == 0:
                     setup.target_q.load_state_dict(setup.online_q.state_dict())
     
-    max_tile = max((states.max().item()), max_tile)
-    print(max_tile)
-    epsilon = max(params.min_epsilon, params.epsilon * params.decay)
+    m_score = evaluate_model()
+    max_score.append(m_score)
+
+    line.set_data(range(len(max_score)), max_score)
+    ax.relim()
+    ax.autoscale_view()
+    fig.canvas.draw()
+    fig.canvas.flush_events()
+    plt.pause(0.1)
+
+    params.epsilon = max(params.min_epsilon, params.epsilon * params.decay)
 print('done training')
-torch.save(setup.model.state_dict(), "model.pt")
+torch.save(setup.online_q.state_dict(), "model.pt")

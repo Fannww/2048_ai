@@ -71,42 +71,47 @@ class ReplayBuffer():
     def maxpr(self):
         return self.maxp
     
-vmask = torch.zeros(128, 4, dtype=torch.bool, device=device)
-cmask = torch.zeros(128, 4, dtype=torch.bool, device=device)
-rank = torch.arange(4, device=device).expand(128, 4)
-masked_rank = torch.empty(128, 4, device=device)
+vmask = torch.zeros(params.batch, 4, dtype=torch.bool, device=device)
+cmask = torch.zeros(params.batch, 4, dtype=torch.bool, device=device)
+rank = torch.arange(4, device=device).expand(params.batch, 4)
+masked_rank = torch.empty(params.batch, 4, device=device)
 def return_valid_move(states, actions, vmask=vmask):
     vmask.zero_()
     for i in range(4):
         for j in range(4):
             if i != 0:#is up valid?
-                cmask[:, 0] = ((states[:, i, j] == states[:,i - 1, j]) | (states[:,i - 1, j] == 0)) * ~(states[:, i, j] == 0)
+                cmask[:, 0] = ((states[:, i, j] == states[:,i - 1, j]) | (states[:,i - 1, j] == 0)) & ~(states[:, i, j] == 0)
                 vmask[:, 0] |= cmask[:, 0]
             if j != 0:#is left valid?
-                cmask[:, 2] = ((states[:, i, j] == states[:,i, j - 1]) | (states[:,i, j - 1] == 0)) * ~(states[:, i, j] == 0)
+                cmask[:, 2] = ((states[:, i, j] == states[:,i, j - 1]) | (states[:,i, j - 1] == 0)) & ~(states[:, i, j] == 0)
                 vmask[:, 2] |= cmask[:, 2]
             if i != 3:#is down valid?
-                cmask[:, 1] = ((states[:, i, j] == states[:,i + 1, j]) | (states[:,i + 1, j] == 0)) * ~(states[:, i, j] == 0)
+                cmask[:, 1] = ((states[:, i, j] == states[:,i + 1, j]) | (states[:,i + 1, j] == 0)) & ~(states[:, i, j] == 0)
                 vmask[:, 1] |= cmask[:, 1]
             if j != 3:#is right valid?
-                cmask[:, 3] = ((states[:, i, j] == states[:,i, j + 1]) | (states[:,i, j + 1] == 0)) * ~(states[:, i, j] == 0)
+                cmask[:, 3] = ((states[:, i, j] == states[:,i, j + 1]) | (states[:,i, j + 1] == 0)) & ~(states[:, i, j] == 0)
                 vmask[:, 3] |= cmask[:, 3]
     masked_rank.copy_(rank)
     masked_rank[~vmask] = 999
-    idx = masked_rank.argmin(dim=1)
-    vactions = actions[torch.arange(128), idx]
+    umasked_rank = masked_rank.unsqueeze(1)
+    valid_mask = ((actions.unsqueeze(-1) == umasked_rank).any(dim=-1)).view(params.batch, 4)
+    valid_idx = valid_mask.float().argmax(dim=1)
+    vactions = actions.gather(1, valid_idx.unsqueeze(1)).squeeze(1)
+    
     return vactions.int()
 def SelectAction(state, epsilon, model):
     israndom = False
     if random.random() < epsilon:
         israndom = True
         randoma = torch.stack([torch.randperm(4, device=device) for _ in range(params.batch)])
-        randoma = return_valid_move(state.view(128, 4, 4), randoma)
+        randoma = return_valid_move(state.view(params.batch, 4, 4), randoma)
     if not israndom:    
         with torch.no_grad():
             q_values = model(state.float())
-            sorted_actions = torch.argsort(q_values, descending=True)
-            actions = return_valid_move(state.view(128, 4, 4), sorted_actions)
+            probs = torch.softmax(q_values, dim=2)
+            q_evalues = torch.sum(q_values * probs, dim=2)
+            sorted_actions = torch.argsort(q_evalues, descending=True)
+            actions = return_valid_move(state.view(params.batch, 4, 4), sorted_actions)
     return actions if not israndom else randoma
 
 
