@@ -7,12 +7,14 @@ import time
 import numpy as np
 from dqn import NN, SelectAction
 import torch
-
+import gym
+import params
+params.batch = 1
 
 model = NN()
 model.load_state_dict(torch.load("model.pt"))
 model.eval()
-board = ak.init()
+board = gym.make_grids()
 
 #le screen
 WIDTH, HEIGHT = 804, 804
@@ -71,11 +73,11 @@ def draw(value, row, col):
     y = 6 + (200 * row)
     tile_size = 193
     rect = pygame.Rect(x, y, tile_size, tile_size)
-    pygame.draw.rect(background, color[abs(value)], rect, border_radius=20)
+    pygame.draw.rect(background, color[int(abs(value))], rect, border_radius=20)
     
     #value
     if value != 0:
-        text = font.render(str(value), True, (255, 255, 255))
+        text = font.render(str(int(value)), True, (255, 255, 255))
         text_rect = text.get_rect(center=rect.center)
         background.blit(text, text_rect)
 firstr = True
@@ -95,35 +97,36 @@ while running:
         elif event.type == pygame.KEYDOWN:
             moved = True
             if event.key == pygame.K_r:
-                b_after = ak.init()
+                b_after = gym.make_grids()
                 score = 0
+                Game_over = False
             if event.key == pygame.K_w:
-                b_after, t_score, _ = ak.step(board, ak.Direction.Up)
+                b_after = gym.step(board, torch.tensor(0).unsqueeze(0))
             if event.key == pygame.K_a:
-                b_after, t_score, _ = ak.step(board, ak.Direction.Left)
+                b_after = gym.step(board, torch.tensor(2).unsqueeze(0))
             if event.key == pygame.K_s:
-                b_after, t_score, _ = ak.step(board, ak.Direction.Down)
+                b_after = gym.step(board, torch.tensor(1).unsqueeze(0))
             if event.key == pygame.K_d:
-                b_after, t_score, _ = ak.step(board, ak.Direction.Right)
-            score += t_score
-            old_b = np.array(board)
-            new_b = np.array(b_after) 
+                b_after = gym.step(board, torch.tensor(3).unsqueeze(0))
+            score += 0
+            old_b = (board.to('cpu')).numpy()
+            new_b = (b_after.to('cpu')).numpy() 
             moved = not np.array_equal(old_b, new_b)
             if moved:
                 board = b_after
     #ai makes move
-    if time.time() - last_time_ai >= delay:
+    if time.time() - last_time_ai == -1:#delay:
         i = 0
         action = SelectAction(torch.tensor(board, dtype=torch.float32).flatten().unsqueeze(0), 0, model)
         while not moved_ai and i < 4:
             if action[i] == 0:
-                b_after, t_score, _ = ak.step(board, ak.Direction.Up)
+                b_after, t_score, _ = ak.step(board.unsqueeze(0), ak.Direction.Up)
             if action[i] == 1:
-                b_after, t_score, _ = ak.step(board, ak.Direction.Down)
+                b_after, t_score, _ = ak.step(board.unsqueeze(0), ak.Direction.Down)
             if action[i] == 2:
-                b_after, t_score, _ = ak.step(board, ak.Direction.Left)
+                b_after, t_score, _ = ak.step(board.unsqueeze(0), ak.Direction.Left)
             if action[i] == 3:
-                b_after, t_score, _ = ak.step(board, ak.Direction.Right)
+                b_after, t_score, _ = ak.step(board.unsqueeze(0), ak.Direction.Right)
             score += t_score
             old_b = np.array(board)
             new_b = np.array(b_after)
@@ -146,27 +149,27 @@ while running:
 
 
         #deseneaza fiecare tile din grid
-        for i in range(4):
-            for j in range(4):
-                if board[i][j] > 0:
-                    draw(board[i][j], i, j)
-                    grids += 1
-                else:
-                    ettile = pygame.Rect(6 + (j * 200), 6 + (i * 200), 193, 193)
-                    pygame.draw.rect(background, beige, ettile, border_radius=20)
+        for i in range(16):
+            row = i // 4
+            col = i % 4
+            if board[0, i] > 0:
+                draw(board[0, i], row, col)
+                grids += 1
+            else:
+                ettile = pygame.Rect(6 + (col * 200), 6 + (row * 200), 193, 193)
+                pygame.draw.rect(background, beige, ettile, border_radius=20)
     #check if the grid is full/safe CUZ THIS AK BOARD CANT DO THAT
     full = True if grids == 16 else False
     if moved or moved_ai:
         if full:
             Game_over = True
-            for i in range(4):
-                for j in range(4):
-                    if i < 3 and board[i][j] == board[i + 1][j]:
-                        Game_over = False
-                        break
-                    if j < 3 and board[i][j] == board[i][j + 1]:
-                        Game_over = False
-                        break
+            for i in range(16):
+                if i < 12 and board[0, i] == board[0, i + 4]:
+                    Game_over = False
+                    break
+                if (i % 4) < 3 and board[0, i] == board[0, i + 1]:
+                    Game_over = False
+                    break
         if Game_over == True:
             background.blit(text, text_rect)
     moved = False

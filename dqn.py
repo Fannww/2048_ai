@@ -144,11 +144,11 @@ def trainstep(buffer, online_q, target_q, optimizer, batch_size, gamma):
     optimizer.step()
 
 
-directions = np.array([[0, 1], [1, 0]])
-def issafe(row, col, grid):
+def issafe(grid):
     mask = torch.full((params.batch, 1), 1, device=device)
-    for d1, d2 in directions:
-        mask *= (grid[:, row, col] == grid[:, row + d1, col + d2]).view(params.batch, 1)
+    rmask = (grid[:, :, :-1] == grid[:, :, 1:])
+    dmask = (grid[:, :-1, :] == grid[:, 1:, :])
+    mask = rmask.any(dim=(1, 2)) | dmask.any(dim=(1, 2))
 
     return mask
 def weighted_sum_og(grid):
@@ -166,23 +166,15 @@ def evaluate(grids):
     grids = grids.view(params.batch, 4, 4)
     weighted_sum = (weighted_sum_og(grids))
     smoothness = torch.full((params.batch,1), 0.0, device=device)
-    for i in range(3):
-        for j in range(3):
-            mask = ((grids[:, i, j] != 0) * (grids[:, i + 1, j] != 0))
-            smoothness -= (abs((grids[:, i, j] - grids[:, i + 1, j]) * mask)).view(params.batch, 1)
-            mask = ((grids[:, i, j] != 0) * (grids[:, i, j + 1] != 0))
-            smoothness -= (abs((grids[:, i, j] - grids[:, i, j + 1]) * mask)).view(params.batch, 1)
+    mask = ((grids[:, :-1, :] != 0) & (grids[:, 1:, :] != 0))
+    smoothness -= ((abs((grids[:, :-1, :] - grids[:, 1:, :]) * mask)).view(params.batch, 12)).sum(dim=1).unsqueeze(-1)
+    mask = ((grids[:, :, :-1] != 0) & (grids[:, :, 1:] != 0))
+    smoothness -= ((abs((grids[:, :, :-1] - grids[:, :, 1:]) * mask)).view(params.batch, 12)).sum(dim=1).unsqueeze(-1)
 
-    max_tile = torch.full((params.batch, 1), -1.0, device=device)
     empty_tiles = torch.full((params.batch, 1), 0.0, device=device)
-    for row in range(4):
-        for col in range(4):
-            vals = grids[:, row, col].view(params.batch, 1)
-            mask = vals == 0
-            empty_tiles += 1 * mask
-            mask = vals > max_tile
-            max_tile *= ~mask
-            max_tile += mask * vals
+    mask = (grids == 0).view(params.batch, -1)
+    empty_tiles += (1 * mask).sum(dim=1).unsqueeze(-1)
+    max_tile = grids.view(params.batch, 16).max(dim=1).values.unsqueeze(-1)
     empty_weight = torch.full((params.batch, 1), 0.0, device=device)
     smoothness_weight = torch.full((params.batch ,1), 0.0, device=device) 
     mask = max_tile < 10
@@ -197,10 +189,8 @@ def evaluate(grids):
     safe = torch.full((params.batch, 1), 0, device=device)
     mask = empty_tiles == 0
     safe += mask
-    for i in range(3):
-        for j in range(3):
-            mask = issafe(i, j, grids)
-            safe = (safe == 1) & (mask == 0)
+    mask = (issafe(grids)).unsqueeze(-1)
+    safe = (safe == 1) & (mask == 0)
     score = (((empty_tiles * max_tile * empty_weight) + (smoothness * (max_tile * smoothness_weight)) + (max_tile) + (weighted_sum)) * (~safe).int())
     score = score * 0.05
-    return score.view(params.batch,)
+    return score.view(params.batch,), safe.view(params.batch,)

@@ -21,8 +21,8 @@ for ep in range(params.episodes):
     while not done.all():
 
         action = SelectAction(states, params.epsilon, setup.online_q)
-        next_state, _, done = setup.env.step(action)
-        reward = evaluate(next_state)
+        next_state = setup.env.step(action)
+        reward, done = evaluate(next_state)
         maxp = setup.buffer.maxpr()
         setup.buffer.push(states, action, reward, next_state, done.to(device=setup.device), torch.full((params.batch,), maxp, dtype=torch.float, device=setup.device))
         states = next_state.view(params.batch, 16)
@@ -32,7 +32,8 @@ for ep in range(params.episodes):
                 steps += 1
                 if steps % params.target_upddate == 0:
                     setup.target_q.load_state_dict(setup.online_q.state_dict())
-    
+        
+    torch.save(setup.online_q.state_dict(), "model.pt")
     m_score = evaluate_model()
     max_score.append(m_score)
 

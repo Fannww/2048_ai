@@ -2,34 +2,19 @@ import akioi_2048 as ak
 import numpy as np
 import torch
 import params
+import gym
 
 device = torch.device("cuda:0")
 class Env2048:
     def __init__(self, batch=params.batch):
         self.batch = batch
-        self.boards = np.empty((self.batch, 4, 4), dtype=int)
+        self.boards = gym.make_grids()
 
     def reset(self):
-        self.boards = np.empty((self.batch, 4, 4), dtype=int)
-        for k in range(self.batch):
-            board = ak.init()
-            for i in range(4):
-                for j in range(4):
-                    if board[i][j] < 0:
-                        board[i][j] = 0
-            self.boards[k] = board
-        return torch.as_tensor(self.boards,device=device, dtype=torch.int).view(self.batch, 16)
-    
+        self.boards = gym.make_grids()
+        return self.boards
+
     def step(self, actions):
-        dones = []
-        #action up=0 down=1 left=2 right=3
-        for k, (board, action) in enumerate(zip(self.boards, actions.squeeze())):
-            direction = [ak.Direction.Up, ak.Direction.Down, ak.Direction.Left, ak.Direction.Right][action]
-            new_board, _, done = ak.step(board, direction)
-            dones.append(False if done == ak.State.Continue else True )
-            for i in range(4):
-                for j in range(4):
-                    if new_board[i][j] < 0:
-                        new_board[i][j] = 0
-            self.boards[k] = np.array(new_board)
-        return torch.as_tensor(self.boards, device=device, dtype=torch.int).view(self.batch, 16), _, torch.as_tensor(dones)
+        grids = gym.step(self.boards, actions)
+        self.boards = grids
+        return grids
