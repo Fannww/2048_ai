@@ -1,3 +1,5 @@
+import params
+params.batch = 1
 import akioi_2048 as ak
 import pygame
 pygame.init()
@@ -8,11 +10,11 @@ import numpy as np
 from dqn import NN, SelectAction
 import torch
 import gym
-import params
-params.batch = 1
 
-model = NN()
-model.load_state_dict(torch.load("model.pt"))
+device = torch.device("cuda:0")
+model = NN().to(device)
+checkpoint = torch.load("model.pt")
+model.load_state_dict(checkpoint['model'])
 model.eval()
 board = gym.make_grids()
 
@@ -87,7 +89,7 @@ Game_over = False
 #running loop
 running = True
 last_time_ai = time.time()
-delay = 0.01
+delay = 0.001
 while running:
 
 
@@ -115,21 +117,21 @@ while running:
             if moved:
                 board = b_after
     #ai makes move
-    if time.time() - last_time_ai == -1:#delay:
+    if time.time() - last_time_ai >= delay:
         i = 0
+        old_b = (board.to('cpu')).numpy()
         action = SelectAction(torch.tensor(board, dtype=torch.float32).flatten().unsqueeze(0), 0, model)
-        while not moved_ai and i < 4:
+        while not moved_ai and i < 4 and (Game_over == False):
             if action[i] == 0:
-                b_after, t_score, _ = ak.step(board.unsqueeze(0), ak.Direction.Up)
+                b_after = gym.step(board, torch.tensor(0).unsqueeze(0))
             if action[i] == 1:
-                b_after, t_score, _ = ak.step(board.unsqueeze(0), ak.Direction.Down)
+                b_after = gym.step(board, torch.tensor(1).unsqueeze(0))
             if action[i] == 2:
-                b_after, t_score, _ = ak.step(board.unsqueeze(0), ak.Direction.Left)
+                b_after = gym.step(board, torch.tensor(2).unsqueeze(0))
             if action[i] == 3:
-                b_after, t_score, _ = ak.step(board.unsqueeze(0), ak.Direction.Right)
-            score += t_score
-            old_b = np.array(board)
-            new_b = np.array(b_after)
+                b_after = gym.step(board, torch.tensor(3).unsqueeze(0))
+            score += 0
+            new_b = (b_after.to('cpu')).numpy() 
             moved_ai = not np.array_equal(old_b, new_b)
             if moved_ai:
                 board = b_after

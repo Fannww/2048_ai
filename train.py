@@ -17,23 +17,21 @@ for ep in range(params.episodes):
     print (ep)
     states = setup.env.reset()
     done = torch.full((params.batch, 1), 0, dtype=torch.bool, device=setup.device)
-    max_tile = 0
     while not done.all():
 
         action = SelectAction(states, params.epsilon, setup.online_q)
-        next_state = setup.env.step(action)
-        reward, done = evaluate(next_state)
+        old_state = states.clone()
+        setup.env.step(action)
+        reward, done = evaluate(states)
         maxp = setup.buffer.maxpr()
-        setup.buffer.push(states, action, reward, next_state, done.to(device=setup.device), torch.full((params.batch,), maxp, dtype=torch.float, device=setup.device))
-        states = next_state.view(params.batch, 16)
+        setup.buffer.push(old_state, action, reward, states, done.to(device=setup.device), torch.full((params.batch,), maxp, dtype=torch.float, device=setup.device))
         if len(setup.buffer) > params.batch:
-            for _ in range(8):
+            for _ in range(16):
                 trainstep(setup.buffer, setup.online_q, setup.target_q, setup.optimizer, params.batch, params.gamma)
                 steps += 1
                 if steps % params.target_upddate == 0:
                     setup.target_q.load_state_dict(setup.online_q.state_dict())
         
-    torch.save(setup.online_q.state_dict(), "model.pt")
     m_score = evaluate_model()
     max_score.append(m_score)
 
@@ -46,4 +44,8 @@ for ep in range(params.episodes):
 
     params.epsilon = max(params.min_epsilon, params.epsilon * params.decay)
 print('done training')
-torch.save(setup.online_q.state_dict(), "model.pt")
+print((max_score))
+torch.save({
+    'model': setup.online_q.state_dict(),
+    'optimizer': setup.optimizer.state_dict(),
+}, "model.pt")

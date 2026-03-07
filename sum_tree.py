@@ -32,19 +32,23 @@ class sum_tree:
         return self.tree[0]
     
     def sample(self, samples, lens):
+        if lens == 31104:
+            pass
         idxs = torch.zeros(len(samples), dtype=int, device=device)
-        i = 0
-        for sample in samples:
-            idx = 0
-            while idx < (self.capacity - 1):
-                left = self.tree[idx * 2 + 1]
-                if sample <= left:
-                    idx = idx * 2 + 1
-                else:
-                    idx = idx * 2 + 2
-                    sample = sample - left
-            idxs[i] = int(idx - (self.capacity - 1))
-            if idxs[i] > lens:
-                continue
-            i += 1
+        idx = torch.zeros(len(samples), dtype=int, device=device)
+        ndone = torch.full((len(samples),), 1, dtype=torch.bool, device=device)
+        nomorendone = torch.full((len(samples),), 1, dtype=torch.bool, device=device)
+        while ndone.any():
+            left = self.tree[idx * 2 + 1]
+            lmask = samples <= left
+            idx[lmask] = idx[lmask] * 2 + 1
+            rmask = samples > left
+            idx[rmask] = idx[rmask] * 2 + 2
+            samples[rmask] = samples[rmask] - left[rmask]
+            ndone[nomorendone] = idx[nomorendone] < (self.capacity - 1)
+            idxs[~ndone ^ ~nomorendone if ndone.size(0) != 0 else None] = idx[~ndone ^ ~nomorendone if ndone.size(0) != 0 else None] - (self.capacity - 1)
+            idx[~ndone if ndone.size(0) else None] = 0
+            nomorendone = ndone.clone()
+        nvmask = idxs > lens
+        idxs[nvmask] = 0
         return idxs

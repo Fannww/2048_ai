@@ -16,7 +16,6 @@ def make_grids():
 #action up=0 down=1 left=2 right=3
 def step(grids, actions):
     oldg = (grids.clone()).view(-1, 4, 4)
-    grids = grids.clone()
     grids = grids.view(-1, 4, 4)
     mask = grids != 0 #for all directions
     #left

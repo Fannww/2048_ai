@@ -151,20 +151,15 @@ def issafe(grid):
     mask = rmask.any(dim=(1, 2)) | dmask.any(dim=(1, 2))
 
     return mask
-def weighted_sum_og(grid):
-    weights = np.array([[16., 15., 14., 13.], 
-                       [9. ,10. ,11. , 12.],
-                       [8., 7., 6., 5.],
-                       [1., 2., 3., 4.]])
-    score = torch.zeros((params.batch, 1), dtype=torch.float, device=device)
-    for i in range(4):
-        for j in range(4):
-            score += (weights[i, j] * grid[:, i, j]).view(params.batch, 1)
-    return score
+
+weights = torch.tensor([[16., 15., 14., 13.], 
+                    [9. ,10. ,11. , 12.],
+                    [8., 7., 6., 5.],
+                    [1., 2., 3., 4.]], device=device)
 def evaluate(grids):
     grids = torch.where(grids == 0, 0, torch.log2(grids))
     grids = grids.view(params.batch, 4, 4)
-    weighted_sum = (weighted_sum_og(grids))
+    weighted_sum = (grids * weights).sum(dim=(1, 2)).view(params.batch, 1)
     smoothness = torch.full((params.batch,1), 0.0, device=device)
     mask = ((grids[:, :-1, :] != 0) & (grids[:, 1:, :] != 0))
     smoothness -= ((abs((grids[:, :-1, :] - grids[:, 1:, :]) * mask)).view(params.batch, 12)).sum(dim=1).unsqueeze(-1)
