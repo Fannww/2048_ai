@@ -1,5 +1,3 @@
-import akioi_2048 as ak
-import numpy as np
 import torch
 import params
 import gym

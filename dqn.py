@@ -1,9 +1,6 @@
 import torch
 import torch.nn as nn
-import torch.optim as optim
-from collections import deque
 import random
-import numpy as np
 import params
 from sum_tree import sum_tree
 from torchrl.modules import NoisyLinear
@@ -186,6 +183,7 @@ def evaluate(grids):
     safe += mask
     mask = (issafe(grids)).unsqueeze(-1)
     safe = (safe == 1) & (mask == 0)
+    max_tile = 1.5 ** max_tile
     score = (((empty_tiles * max_tile * empty_weight) + (smoothness * (max_tile * smoothness_weight)) + (max_tile) + (weighted_sum)) * (~safe).int())
-    score = score * 0.05
+    score = score
     return score.view(params.batch,), safe.view(params.batch,)

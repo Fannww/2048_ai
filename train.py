@@ -22,14 +22,17 @@ for ep in range(params.episodes):
         action = SelectAction(states, params.epsilon, setup.online_q)
         old_state = states.clone()
         setup.env.step(action)
+        old_reward, _ = evaluate(old_state)
         reward, done = evaluate(states)
+        reward -= old_reward
+        reward = (reward / 80).clamp(0, 50)
         maxp = setup.buffer.maxpr()
         setup.buffer.push(old_state, action, reward, states, done.to(device=setup.device), torch.full((params.batch,), maxp, dtype=torch.float, device=setup.device))
         if len(setup.buffer) > params.batch:
             for _ in range(16):
                 trainstep(setup.buffer, setup.online_q, setup.target_q, setup.optimizer, params.batch, params.gamma)
                 steps += 1
-                if steps % params.target_upddate == 0:
+                if steps % params.target_update == 0:
                     setup.target_q.load_state_dict(setup.online_q.state_dict())
         
     m_score = evaluate_model()

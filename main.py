@@ -1,9 +1,7 @@
 import params
 params.batch = 1
-import akioi_2048 as ak
 import pygame
 pygame.init()
-import copy
 import sys
 import time
 import numpy as np

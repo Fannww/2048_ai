@@ -1,5 +1,4 @@
 import torch
-from env import Env2048
 from dqn import SelectAction, evaluate
 import setup
 
