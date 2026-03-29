@@ -13,6 +13,6 @@ class Env2048:
         return self.boards
 
     def step(self, actions):
-        grids = gym.step(self.boards, actions)
+        grids, score = gym.step(self.boards, actions)
         self.boards = grids
-        return grids
+        return grids, score

@@ -1,4 +1,4 @@
-from dqn import SelectAction, trainstep, evaluate
+from dqn import SelectAction, trainstep, issafe
 import torch
 import params
 import setup
@@ -21,11 +21,10 @@ for ep in range(params.episodes):
 
         action = SelectAction(states, params.epsilon, setup.online_q)
         old_state = states.clone()
-        setup.env.step(action)
-        old_reward, _ = evaluate(old_state)
-        reward, done = evaluate(states)
-        reward -= old_reward
-        reward = (reward / 80).clamp(0, 50)
+        _, reward = setup.env.step(action)
+        current_max = states.squeeze(-1).max(dim=1)[0]
+        done = ~(issafe(states.view(params.batch, 4, 4)))
+        reward = ((reward / (current_max * 4)) * 50).clamp(0, 25)
         maxp = setup.buffer.maxpr()
         setup.buffer.push(old_state, action, reward, states, done.to(device=setup.device), torch.full((params.batch,), maxp, dtype=torch.float, device=setup.device))
         if len(setup.buffer) > params.batch:
