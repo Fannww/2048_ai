@@ -27,8 +27,7 @@ for ep in range(params.episodes):
         evaluation = (evaluate(states) / 75) - 10
         norevaluation = torch.sigmoid(evaluation)
         reward = reward * norevaluation
-        maxp = setup.buffer.maxpr()
-        setup.buffer.push(old_state, action, reward, states, done.to(device=setup.device), torch.full((params.batch,), maxp, dtype=torch.float, device=setup.device))
+        setup.buffer.push(old_state, action, reward, states, done.to(device=setup.device))
         if len(setup.buffer) > params.batch:
             for _ in range(16):
                 trainstep(setup.buffer, setup.online_q, setup.target_q, setup.optimizer, params.batch, params.gamma)

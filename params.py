@@ -1,4 +1,4 @@
-episodes = 20
+episodes = 1
 batch = 128
 gamma = 0.99
 epsilon = 1

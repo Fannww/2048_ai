@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 import random
 import params
-from sum_tree import sum_tree
 from torchrl.modules import NoisyLinear
 
 device = torch.device("cuda:0")
@@ -31,42 +30,27 @@ class ReplayBuffer():
         self.reward = torch.empty(capacity, dtype=torch.float,  device=device)
         self.next_state = torch.empty((capacity, 16), dtype=torch.int,  device=device)
         self.done = torch.empty(capacity, dtype=torch.bool,  device=device)
-        self.pbuffer = sum_tree(capacity)
-        self.psum = 0
-        self.maxp = 1
         self.len = 0
-    def push(self, states, actions, rewards, next_states, dones, priority):
-        idx = self.pbuffer.add(priority)
+    def push(self, states, actions, rewards, next_states, dones):
+        idx = torch.arange(self.len, self.len + params.batch)
         self.state[idx] = states
         self.action[idx] = actions
         self.reward[idx] = rewards
         self.next_state[idx] = next_states
         self.done[idx] = dones
-        if priority.max() > self.maxp:
-            self.maxp = priority.max().item()
-        self.psum = self.pbuffer.get_sum()
         self.len += params.batch
 
     def sample(self, batch_size):
-        psamples = torch.rand(batch_size, device=device) * self.psum
-        psamples.clamp_(1e-4)
-        idxs = self.pbuffer.sample(psamples, self.len)
+        idxs = torch.randint(0, self.len, (params.batch,))
         states = self.state[idxs]
         actions = self.action[idxs]
         rewards = self.reward[idxs]
         next_states = self.next_state[idxs]
         dones = self.done[idxs]
         return (states, actions, rewards, next_states, dones), idxs
-    def change_priorities(self, idxs, values):
-        self.pbuffer.update(idxs, values)
-        if values.max() > self.maxp:
-            self.maxp = values.max().item()
-        self.psum = self.pbuffer.get_sum()
         
     def __len__(self):
         return self.len
-    def maxpr(self):
-        return self.maxp
     
 vmask = torch.zeros(params.batch, 4, dtype=torch.bool, device=device)
 rank = torch.arange(4, device=device).expand(params.batch, 4)
@@ -120,10 +104,6 @@ def trainstep(buffer, online_q, target_q, optimizer, batch_size, gamma):
     target = (rewards + gamma * max_next_q * (1 - dones.int())).view(params.batch, 1)
     torch.clamp_(target, params.v_min, params.v_max)
     loss = nn.MSELoss(reduction='none')(q_taken, target.detach())
-    priorities = (loss / loss.max()) + 1e-5
-    unique, u_idx = torch.unique(idxs, return_inverse=True)
-    u_idxs = torch.zeros_like(unique).scatter_(0, u_idx, torch.arange(len(idxs), device=device))
-    buffer.change_priorities(idxs[u_idxs], priorities.view(params.batch,)[u_idxs])
     loss = loss.mean()
     optimizer.zero_grad()
     loss.backward()
