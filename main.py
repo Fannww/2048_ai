@@ -121,15 +121,15 @@ while running:
         action = SelectAction(torch.tensor(board, dtype=torch.float32).flatten().unsqueeze(0), 0, model)
         while not moved_ai and i < 4 and (Game_over == False):
             if action[i] == 0:
-                b_after = gym.step(board, torch.tensor(0).unsqueeze(0))
+                b_after, _ = gym.step(board, torch.tensor(0, device=device, dtype=torch.int).unsqueeze(0))
             if action[i] == 1:
-                b_after = gym.step(board, torch.tensor(1).unsqueeze(0))
+                b_after, _ = gym.step(board, torch.tensor(1, device=device, dtype=torch.int).unsqueeze(0))
             if action[i] == 2:
-                b_after = gym.step(board, torch.tensor(2).unsqueeze(0))
+                b_after, _ = gym.step(board, torch.tensor(2, device=device, dtype=torch.int).unsqueeze(0))
             if action[i] == 3:
-                b_after = gym.step(board, torch.tensor(3).unsqueeze(0))
+                b_after, _ = gym.step(board, torch.tensor(3, device=device, dtype=torch.int).unsqueeze(0))
             score += 0
-            new_b = (b_after.to('cpu')).numpy() 
+            new_b = ((b_after).to('cpu')).numpy() 
             moved_ai = not np.array_equal(old_b, new_b)
             if moved_ai:
                 board = b_after

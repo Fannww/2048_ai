@@ -69,25 +69,14 @@ class ReplayBuffer():
         return self.maxp
     
 vmask = torch.zeros(params.batch, 4, dtype=torch.bool, device=device)
-cmask = torch.zeros(params.batch, 4, dtype=torch.bool, device=device)
 rank = torch.arange(4, device=device).expand(params.batch, 4)
 masked_rank = torch.empty(params.batch, 4, device=device)
 def return_valid_move(states, actions, vmask=vmask):
     vmask.zero_()
-    for i in range(4):
-        for j in range(4):
-            if i != 0:#is up valid?
-                cmask[:, 0] = ((states[:, i, j] == states[:,i - 1, j]) | (states[:,i - 1, j] == 0)) & ~(states[:, i, j] == 0)
-                vmask[:, 0] |= cmask[:, 0]
-            if j != 0:#is left valid?
-                cmask[:, 2] = ((states[:, i, j] == states[:,i, j - 1]) | (states[:,i, j - 1] == 0)) & ~(states[:, i, j] == 0)
-                vmask[:, 2] |= cmask[:, 2]
-            if i != 3:#is down valid?
-                cmask[:, 1] = ((states[:, i, j] == states[:,i + 1, j]) | (states[:,i + 1, j] == 0)) & ~(states[:, i, j] == 0)
-                vmask[:, 1] |= cmask[:, 1]
-            if j != 3:#is right valid?
-                cmask[:, 3] = ((states[:, i, j] == states[:,i, j + 1]) | (states[:,i, j + 1] == 0)) & ~(states[:, i, j] == 0)
-                vmask[:, 3] |= cmask[:, 3]
+    vmask[:, 0] = (((states[:, :-1, :] == states[:, 1:, :]) | (states[:, :-1, :] == 0)) & ~(states[:, 1:, :] == 0)).any(dim=(1, 2))
+    vmask[:, 2] = (((states[:, :, :-1] == states[:, :, 1:]) | (states[:, :, :-1] == 0)) & ~(states[:, :, 1:] == 0)).any(dim=(1, 2))
+    vmask[:, 1] = (((states[:, :-1, :] == states[:, 1:, :]) | (states[:, 1:, :] == 0)) & ~(states[:, :-1, :] == 0)).any(dim=(1, 2))
+    vmask[:, 3] = (((states[:, :, :-1] == states[:, :, 1:]) | (states[:, :, 1:] == 0)) & ~(states[:, :, :-1] == 0)).any(dim=(1, 2))
     masked_rank.copy_(rank)
     masked_rank[~vmask] = 999
     umasked_rank = masked_rank.unsqueeze(1)
@@ -145,6 +134,45 @@ def issafe(grid):
     mask = torch.full((params.batch, 1), 1, device=device)
     rmask = (grid[:, :, :-1] == grid[:, :, 1:])
     dmask = (grid[:, :-1, :] == grid[:, 1:, :])
-    mask = rmask.any(dim=(1, 2)) | dmask.any(dim=(1, 2))
+    mask = rmask.any(dim=(1, 2)) | dmask.any(dim=(1, 2)) | (grid.any(dim=(1, 2)) == 0)
 
     return mask
+
+weights = torch.tensor([[16., 15., 14., 13.], 
+                    [9. ,10. ,11. , 12.],
+                    [8., 7., 6., 5.],
+                    [1., 2., 3., 4.]], device=device)
+def evaluate(grids):
+    grids = torch.where(grids == 0, 0, torch.log2(grids))
+    grids = grids.view(params.batch, 4, 4)
+    weighted_sum = (grids * weights).sum(dim=(1, 2)).view(params.batch, 1)
+    smoothness = torch.full((params.batch,1), 0.0, device=device)
+    mask = ((grids[:, :-1, :] != 0) & (grids[:, 1:, :] != 0))
+    smoothness -= ((abs((grids[:, :-1, :] - grids[:, 1:, :]) * mask)).view(params.batch, 12)).sum(dim=1).unsqueeze(-1)
+    mask = ((grids[:, :, :-1] != 0) & (grids[:, :, 1:] != 0))
+    smoothness -= ((abs((grids[:, :, :-1] - grids[:, :, 1:]) * mask)).view(params.batch, 12)).sum(dim=1).unsqueeze(-1)
+
+    empty_tiles = torch.full((params.batch, 1), 0.0, device=device)
+    mask = (grids == 0).view(params.batch, -1)
+    empty_tiles += (1 * mask).sum(dim=1).unsqueeze(-1)
+    max_tile = grids.view(params.batch, 16).max(dim=1).values.unsqueeze(-1)
+    empty_weight = torch.full((params.batch, 1), 0.0, device=device)
+    smoothness_weight = torch.full((params.batch ,1), 0.0, device=device) 
+    mask = max_tile < 10
+    empty_weight += 4 * mask
+    smoothness_weight += 0.2 * mask
+    mask = (max_tile >= 10) & (max_tile < 11)
+    empty_weight += 2.5 * mask
+    smoothness_weight += 0.8 * mask
+    mask = max_tile >= 11
+    empty_weight += 1.5 * mask
+    smoothness_weight += 3 * mask
+    safe = torch.full((params.batch, 1), 0, device=device)
+    mask = empty_tiles == 0
+    safe += mask
+    mask = (issafe(grids)).unsqueeze(-1)
+    safe = (safe == 1) & (mask == 0)
+    max_tile = 1.5 ** max_tile
+    score = (((empty_tiles * max_tile * empty_weight) + (smoothness * (max_tile * smoothness_weight)) + (max_tile) + (weighted_sum)) * (~safe).int())
+
+    return score.view(params.batch,)

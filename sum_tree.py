@@ -15,39 +15,31 @@ class sum_tree:
         self.write = (self.write + params.batch) % self.capacity
         return write
     
-    def update(self, idx, value):
+    def update(self, idx, values):
         widx = idx + self.capacity - 1
-        change = value - self.tree[widx]
-        self.tree[widx] = value
-        mask = torch.full_like(idx,  1, dtype=torch.bool, device=device)
+        change = values - self.tree[widx]
+        self.tree[widx] = values
+
         while True:
-            widx[mask] =  (widx[mask] - 1) // 2
-            mask = widx >= 0
-            if not mask.any():
+            widx = (widx - 1) // 2
+            if (widx == 0).all():
+                self.tree[0] += change.sum()
                 break
-            self.tree.scatter_add_(0, widx[mask], change[mask])
+            self.tree.scatter_add_(0, widx, change)
 
     def get_sum(self):
         return self.tree[0]
     
     def sample(self, samples, lens):
-        if lens == 31104:
-            pass
-        idxs = torch.zeros(len(samples), dtype=int, device=device)
-        idx = torch.zeros(len(samples), dtype=int, device=device)
-        ndone = torch.full((len(samples),), 1, dtype=torch.bool, device=device)
-        nomorendone = torch.full((len(samples),), 1, dtype=torch.bool, device=device)
-        while ndone.any():
-            left = self.tree[idx * 2 + 1]
-            lmask = samples <= left
-            idx[lmask] = idx[lmask] * 2 + 1
-            rmask = samples > left
-            idx[rmask] = idx[rmask] * 2 + 2
-            samples[rmask] = samples[rmask] - left[rmask]
-            ndone[nomorendone] = idx[nomorendone] < (self.capacity - 1)
-            idxs[~ndone ^ ~nomorendone if ndone.size(0) != 0 else None] = idx[~ndone ^ ~nomorendone if ndone.size(0) != 0 else None] - (self.capacity - 1)
-            idx[~ndone if ndone.size(0) else None] = 0
-            nomorendone = ndone.clone()
-        nvmask = idxs > lens
-        idxs[nvmask] = 0
+        idxs = torch.zeros_like(samples, dtype=torch.long, device=device)
+
+        max_depth = (self.capacity - 1).bit_length()
+        for _ in range(max_depth):
+            left = idxs * 2 + 1
+            right = idxs * 2 + 2
+            cond = samples <= self.tree[left]
+            idxs = torch.where(cond, left, right)
+            samples = torch.where(cond, samples, samples - self.tree[left])
+        idxs.sub_(self.capacity - 1)
+        idxs = torch.where(idxs > lens, 0, idxs)
         return idxs

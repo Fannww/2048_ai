@@ -1,4 +1,4 @@
-from dqn import SelectAction, trainstep, issafe
+from dqn import SelectAction, trainstep, issafe, evaluate
 import torch
 import params
 import setup
@@ -24,7 +24,9 @@ for ep in range(params.episodes):
         _, reward = setup.env.step(action)
         current_max = states.squeeze(-1).max(dim=1)[0]
         done = ~(issafe(states.view(params.batch, 4, 4)))
-        reward = ((reward / (current_max * 4)) * 50).clamp(0, 25)
+        evaluation = (evaluate(states) / 75) - 10
+        norevaluation = torch.sigmoid(evaluation)
+        reward = reward * norevaluation
         maxp = setup.buffer.maxpr()
         setup.buffer.push(old_state, action, reward, states, done.to(device=setup.device), torch.full((params.batch,), maxp, dtype=torch.float, device=setup.device))
         if len(setup.buffer) > params.batch:

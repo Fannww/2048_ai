@@ -9,7 +9,7 @@ def evaluate_model():
     while not done.all():
         action = SelectAction(state, 0, setup.online_q)
         next_state, _ = setup.env.step(action)
-        done = ~(issafe(state.view(params.batch, 4, 4)))
+        done = ~(issafe(next_state.view(params.batch, 4, 4)))
         state = next_state
     print(state)
-    return state.sum(dim=1).max().item()
+    return state.float().sum(dim=1).mean().item()
