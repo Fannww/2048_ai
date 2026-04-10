@@ -1,5 +1,6 @@
 import torch
 import params
+import torch.nn.functional as F
 
 device = torch.device("cuda:0")
 def make_grids():
@@ -21,19 +22,20 @@ def step(grids, actions):
     mask = grids != 0 #for all directions
     #left
     left_mask = actions == 2
-    left_idxs = mask[left_mask].cumsum(dim=2) - 1 #can work for left and right
+    left_idxs = (mask[left_mask].cumsum(dim=2) - 1).clamp(min=0) #can work for left and right
     left_out = torch.zeros_like(grids[left_mask], device=device) 
-    left_out.scatter_add_(2, left_idxs.clamp_(min=0), grids[left_mask]) #can work for left and right
+    left_out.scatter_add_(2, left_idxs, grids[left_mask]) #can work for left and right
     lxm_mask = left_out[:, :, :-1] == left_out[:, :, 1:] #will work for left can work for right if i flip it
-    lxm_mask = torch.cat([lxm_mask, torch.full((grids[left_mask].size(0), 4, 1), 0, dtype=torch.bool, device=device)], dim=2) if lxm_mask.size(0) != 0 else torch.full((1, 4, 4), 0, device=device) #this will make it for left and i can just flip it for  right
-    lxfake_zero_mask = torch.stack([(lxm_mask[:, :, 0] == True) & (lxm_mask[:, :, 1] == True), (lxm_mask[:, :, 0] == False) & ((lxm_mask[:, :, 1] == True) & (lxm_mask[:, :, 2] == True))], dim=2)#it should work for the fliped version of left
-    lxm_mask[:, :, 1:3] = lxm_mask[:, :, 1:3] ^ lxfake_zero_mask#works for the fliped version
-    ltt0_mask = lxm_mask.roll(shifts=1 ,dims=2) if left_mask.any() else None#once agian hmm idk ill haave to see how it works
+    lxm_mask = F.pad(lxm_mask, (0, 1, 0, 0), mode='constant', value=0) if left_mask.any() else torch.zeros((1, 4, 4), device=device) #this will make it for left and i can just flip it for  right
+    fm0, fm1 = lxm_mask[:, :, 0], lxm_mask[:, :, 1]
+    lxfake_zero_mask = torch.stack([(fm0 == True) & (fm1 == True), (fm0 == False) & ((fm1 == True) & (lxm_mask[:, :, 2] == True))], dim=2)#it should work for the fliped version of left
+    lxm_mask[:, :, 1:3].logical_xor_(lxfake_zero_mask)#works for the fliped version
+    ltt0_mask = lxm_mask.roll(1 ,2) if left_mask.any() else None#once agian hmm idk ill haave to see how it works
     left_out[ltt0_mask] = 0
     left_out[lxm_mask if left_mask.any() else None] *= 2
     scores[left_mask] = (left_out * lxm_mask).sum(dim=(1,2)).int()
     lmask = left_out != 0
-    x_idxs = lmask.cumsum(dim=2) - 1
+    x_idxs = lmask.cumsum(2) - 1
     cx_out = torch.zeros_like(left_out)
     cx_out.scatter_add_(2, x_idxs.clamp(min=0), left_out)
     grids[left_mask] = cx_out
