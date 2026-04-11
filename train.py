@@ -21,7 +21,7 @@ for ep in range(params.episodes):
 
         action = SelectAction(states, params.epsilon, setup.online_q)
         old_state = states.clone()
-        _, reward = setup.env.step(action)
+        states, reward = setup.env.step(action)
         current_max = states.squeeze(-1).max(dim=1)[0]
         done = ~(issafe(states.view(params.batch, 4, 4)))
         evaluation = (evaluate(states) / 75) - 10

@@ -87,7 +87,7 @@ Game_over = False
 #running loop
 running = True
 last_time_ai = time.time()
-delay = 0.001
+delay = 1
 while running:
 
 

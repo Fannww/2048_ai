@@ -30,8 +30,11 @@ class ReplayBuffer():
         self.reward = torch.empty(capacity, dtype=torch.float,  device=device)
         self.next_state = torch.empty((capacity, 16), dtype=torch.int,  device=device)
         self.done = torch.empty(capacity, dtype=torch.bool,  device=device)
+        self.capacity = capacity
         self.len = 0
     def push(self, states, actions, rewards, next_states, dones):
+        if self.len >= self.capacity:
+            self.len = 0
         idx = torch.arange(self.len, self.len + params.batch)
         self.state[idx] = states
         self.action[idx] = actions
