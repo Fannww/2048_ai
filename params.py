@@ -1,10 +1,6 @@
-episodes = 1
+episodes = 1000
 batch = 128
 gamma = 0.99
-epsilon = 1
 min_epsilon = 0.05
-decay = 0.858
-target_update = 100
-v_min = 0
-v_max = 50
-num_atoms = 51
+decay = 0.995
+target_update = 500

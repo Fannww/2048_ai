@@ -1,0 +1,1 @@
+resume = input("Resume training?: y/n: ").strip().lower() == 'y'

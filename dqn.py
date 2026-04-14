@@ -11,8 +11,8 @@ class NN(nn.Module):
         self.fc1 = nn.Linear(16, 512)
         self.fc2 = nn.Linear(512, 256)
         self.fc3 = nn.Linear(256, 128)
-        self.advantage = NoisyLinear(128, 4 * params.num_atoms)
-        self.value = NoisyLinear(128, 1 * params.num_atoms)
+        self.advantage = NoisyLinear(128, 4)
+        self.value = NoisyLinear(128, 1)
         self.nonlinear = nn.ReLU()
     def forward(self, x):
         x = x.view(x.size(0), - 1)
@@ -21,7 +21,7 @@ class NN(nn.Module):
         x = self.nonlinear(self.fc3(x))
         A = self.advantage(x)
         V = self.value(x)
-        Q = V.view(params.batch, 1, params.num_atoms) + (A - A.mean(dim=1, keepdim=True)).view(params.batch, 4, params.num_atoms)
+        Q = V.view(params.batch, 1) + (A - A.mean(dim=1, keepdim=True)).view(params.batch, 4)
         return Q
 class ReplayBuffer():
     def __init__(self, capacity):
@@ -81,9 +81,7 @@ def SelectAction(state, epsilon, model):
     if not israndom:    
         with torch.no_grad():
             q_values = model(state.float())
-            probs = torch.softmax(q_values, dim=2)
-            q_evalues = torch.sum(q_values * probs, dim=2)
-            sorted_actions = torch.argsort(q_evalues, descending=True)
+            sorted_actions = torch.argsort(q_values, descending=True)
             actions = return_valid_move(state.view(params.batch, 4, 4), sorted_actions)
     return actions if not israndom else randoma
 
@@ -96,16 +94,11 @@ def trainstep(buffer, online_q, target_q, optimizer, batch_size, gamma):
     next_states = sample[3]
     dones = sample[4]
     q_values = online_q(states.float())
-    probs = torch.softmax(q_values, dim=2)
-    q_evalues = torch.sum(q_values * probs, dim=2)
-    q_taken = q_evalues.gather(1, actions.long().view(params.batch, 1))
+    q_taken = q_values.gather(1, actions.long().view(params.batch, 1))
 
     next_q = target_q(next_states.float())
-    nprobs = torch.softmax(next_q, dim=2)
-    next_q_evalues = torch.sum(next_q * nprobs, dim=2) 
-    max_next_q = next_q_evalues.max(1)[0]
+    max_next_q = next_q.max(1)[0]
     target = (rewards + gamma * max_next_q * (1 - dones.int())).view(params.batch, 1)
-    torch.clamp_(target, params.v_min, params.v_max)
     loss = nn.MSELoss(reduction='none')(q_taken, target.detach())
     loss = loss.mean()
     optimizer.zero_grad()
