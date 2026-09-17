@@ -11,8 +11,8 @@ import gym
 
 device = torch.device("cuda:0")
 model = NN().to(device)
-checkpoint = torch.load("model.pt")
-model.load_state_dict(checkpoint['model'])
+checkpoint = torch.load("checkpoint.pt", weights_only=False)
+model.load_state_dict(checkpoint['online_q'])
 model.eval()
 board = gym.make_grids()
 
@@ -87,7 +87,7 @@ Game_over = False
 #running loop
 running = True
 last_time_ai = time.time()
-delay = 0.001
+delay = 0.0001
 while running:
 
 
@@ -101,17 +101,17 @@ while running:
                 score = 0
                 Game_over = False
             if event.key == pygame.K_w:
-                b_after = gym.step(board, torch.tensor(0).unsqueeze(0))
+                b_after, _ = gym.step(board, torch.tensor(0).unsqueeze(0))
             if event.key == pygame.K_a:
-                b_after = gym.step(board, torch.tensor(2).unsqueeze(0))
+                b_after, _ = gym.step(board, torch.tensor(2).unsqueeze(0))
             if event.key == pygame.K_s:
-                b_after = gym.step(board, torch.tensor(1).unsqueeze(0))
+                b_after, _ = gym.step(board, torch.tensor(1).unsqueeze(0))
             if event.key == pygame.K_d:
-                b_after = gym.step(board, torch.tensor(3).unsqueeze(0))
+                b_after, _ = gym.step(board, torch.tensor(3).unsqueeze(0))
             score += 0
-            old_b = (board.to('cpu')).numpy()
-            new_b = (b_after.to('cpu')).numpy() 
-            moved = not np.array_equal(old_b, new_b)
+            old_b = (board.to('cpu')).numpy() 
+            new_b = (b_after.to('cpu')).numpy()
+            moved = not np.array_equal(old_b, new_b) 
             if moved:
                 board = b_after
     #ai makes move

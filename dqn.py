@@ -5,10 +5,13 @@ import params
 from torchrl.modules import NoisyLinear
 
 device = torch.device("cuda:0")
+
+powers = torch.tensor([0, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768], device=device, dtype=torch.float32)
+
 class NN(nn.Module):
     def __init__(self):
         super().__init__()
-        self.fc1 = nn.Linear(16, 512)
+        self.fc1 = nn.Linear(256, 512)
         self.fc2 = nn.Linear(512, 256)
         self.fc3 = nn.Linear(256, 128)
         self.advantage = NoisyLinear(128, 4)
@@ -16,12 +19,13 @@ class NN(nn.Module):
         self.nonlinear = nn.ReLU()
     def forward(self, x):
         x = x.view(x.size(0), - 1)
+        x = (x.unsqueeze(-1) == powers).float().flatten(1)
         x = self.nonlinear(self.fc1(x))
         x = self.nonlinear(self.fc2(x))
         x = self.nonlinear(self.fc3(x))
         A = self.advantage(x)
         V = self.value(x)
-        Q = V.view(params.batch, 1) + (A - A.mean(dim=1, keepdim=True)).view(params.batch, 4)
+        Q = V + (A - A.mean(dim=1, keepdim=True))
         return Q
 class ReplayBuffer():
     def __init__(self, capacity):
@@ -110,7 +114,7 @@ def issafe(grid):
     mask = torch.full((params.batch, 1), 1, device=device)
     rmask = (grid[:, :, :-1] == grid[:, :, 1:])
     dmask = (grid[:, :-1, :] == grid[:, 1:, :])
-    mask = rmask.any(dim=(1, 2)) | dmask.any(dim=(1, 2)) | (grid.any(dim=(1, 2)) == 0)
+    mask = rmask.any(dim=(1, 2)) | dmask.any(dim=(1, 2)) | (grid == 0).any(dim=(1, 2))
 
     return mask
 

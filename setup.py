@@ -8,7 +8,7 @@ device = torch.device("cuda:0")
 env = Env2048()
 online_q = NN().to(device)
 target_q = NN().to(device)
-optimizer = optim.Adam(online_q.parameters(), lr=1e-3)
+optimizer = optim.Adam(online_q.parameters(), lr=1e-5)
 if resume:
     checkpoint = torch.load("checkpoint.pt", weights_only=False)
     online_q.load_state_dict(checkpoint["online_q"])

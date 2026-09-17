@@ -26,11 +26,14 @@ for ep in range(0 if not resume else (checkpoint["episode"] + 1), params.episode
         action = SelectAction(states, setup.epsilon, setup.online_q)
         old_state = states.clone()
         states, reward = setup.env.step(action)
+        #reward = torch.log2(reward)
         current_max = states.squeeze(-1).max(dim=1)[0]
         done = ~(issafe(states.view(params.batch, 4, 4)))
         evaluation = (evaluate(states) / 75) - 10
         norevaluation = torch.sigmoid(evaluation)
         reward = reward * (1 + norevaluation)
+        reward = torch.sigmoid(reward / 25)
+        #reward = reward.float()
         setup.buffer.push(old_state, action, reward, states, done.to(device=setup.device))
         if len(setup.buffer) > params.batch:
             for _ in range(16):
